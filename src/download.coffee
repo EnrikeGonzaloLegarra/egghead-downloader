@@ -51,8 +51,8 @@ getVideoPaths = (link, err, next)->
 
     if error
       return err(error)
-    if html.indexOf('This lesson is for PRO members.') > -1
-      return err('This lesson is for PRO members.')
+    # if html.indexOf('This lesson is for PRO members.') > -1
+    #   return err('This lesson is for PRO members.')
 
     id = getVideoID(html)
     videoUrl = "https://embedwistia-a.akamaihd.net/deliveries/#{id}/file.mp4"
