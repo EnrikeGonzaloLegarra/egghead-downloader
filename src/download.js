@@ -8,75 +8,67 @@ const mkdirp = require('mkdirp')
 const async = require('async')
 const cheerio = require('cheerio')
 const os = require('os')
-const request = require('request')
+const request = require('request-promise-native')
 
-const downloadSeries = (url, callback) => {
-  return fetchLinks(url, function(links) {
-    var threadCount
-    threadCount = os.cpus().length
-    return async.eachLimit(links, threadCount, function(link, next) {
-      return downloadVideo(link, next)
-    }, callback)
+const VIDEO_BASE_URL = 'https://embedwistia-a.akamaihd.net/deliveries/'
+
+const fetchLinks = url => {
+  console.log(`Looking for links: ${url}`)
+  const parts = url.split('/')
+  const series = parts[parts.length - 1]
+  return request(url,{
+    jar: true,
+    rejectUnauthorized: false,
+    followAllRedirects: true
   })
-}
-
-const fetchLinks = (url, callback) => {
-  var parts, series
-  parts = url.split('/')
-  series = parts[parts.length - 1]
-  console.log("Fetching: " + url)
-  return request(url, function(error, response, html) {
-    var $, links
-    $ = cheerio.load(html)
-    links = []
-    $('a.flex.bg-white').each(function(index, link) {
-      index = ('0' + (index + 1)).substr(-2)
-      return links.push({
-        href: $(this).attr('href'),
-        series: series,
-        index: index
-      })
+  .then(html => {
+    const $ = cheerio.load(html)
+    const links = []
+    $('a.flex.bg-white').each(function (i, link) {
+      const index = `${(i+1)<10?'0':''}${i+1}`
+      const href =  $(this).attr('href')
+      links.push({ href, series, index })
     })
-    return callback(links)
+    return links
+  })
+  .catch(e => {
+    console.error('Error during fetch', e)
+    throw e
   })
 }
 
-const downloadVideo = (link, callback) => {
-  return getVideoPaths(link, function(error) {
-    console.log("error: " + error)
-    return callback()
-  }, function(videoUrl, filePath) {
-    return writeFile(videoUrl, filePath, callback)
+const getVideoInfo = link => {
+  console.log('Opening page: ' + link.href)
+  return request(link.href, {
+    jar: true,
+    rejectUnauthorized: false,
+    followAllRedirects: true
   })
-}
+    .then(html => {
+      if (html.indexOf('This lesson is for PRO members.') > -1) {
+        throw Error('This lesson is for PRO members.')
+      }
+      const id = getVideoID(html)
+      const videoUrl = `${VIDEO_BASE_URL}${id}/file.mp4`
+      const fileName = path.basename(url.parse(link.href).pathname)
+      const filePath = `videos/${link.series}/${link.index}-${fileName}.mp4`
 
-const getVideoPaths = (link, err, next) => {
-  console.log("fetching: " + link.href)
-  return request(link.href, function(error, response, html) {
-    var fileName, filePath, id, videoUrl
-    if (error) {
-      return err(error)
-    }
-    if (html.indexOf('This lesson is for PRO members.') > -1) {
-      return err('This lesson is for PRO members.')
-    }
-    id = getVideoID(html)
-    videoUrl = "https://embedwistia-a.akamaihd.net/deliveries/" + id + "/file.mp4"
-    fileName = path.basename(url.parse(link.href).pathname) + '.mp4'
-    filePath = "videos/" + link.series + "/" + link.index + "-" + fileName
-    mkdirp.sync("videos/" + link.series)
-    return next(videoUrl, filePath)
-  })
+      mkdirp.sync('videos/' + link.series)
+      return { videoUrl, filePath }
+    })
+    .catch(e => {
+      console.error('Error during getVidePath', e)
+      throw e
+    })
 }
 
 const getVideoID = (html) => {
-  var $, contentUrl, contentUrlMatch, regex, thumbnailUrl, thumbnailUrlMatch
-  $ = cheerio.load(html)
-  contentUrl = $("meta[itemprop=contentURL]").attr('content')
-  thumbnailUrl = $("meta[itemprop=thumbnailUrl]").attr('content')
-  regex = /deliveries\/(.*)+\.bin/
-  contentUrlMatch = contentUrl.match(regex)
-  thumbnailUrlMatch = thumbnailUrl.match(regex)
+  const $ = cheerio.load(html)
+  const contentUrl = $('meta[itemprop=contentURL]').attr('content')
+  const thumbnailUrl = $('meta[itemprop=thumbnailUrl]').attr('content')
+  const regex = /deliveries\/(.*)+\.bin/
+  const contentUrlMatch = contentUrl.match(regex)
+  const thumbnailUrlMatch = thumbnailUrl.match(regex)
   if (contentUrlMatch) {
     return contentUrlMatch[1]
   } else if (thumbnailUrlMatch) {
@@ -84,19 +76,19 @@ const getVideoID = (html) => {
   }
 }
 
-const writeFile = (videoUrl, filePath, callback) => {
-  var err, file, stats
+const writeFile = ({ videoUrl, filePath }, callback) => {
   try {
-    stats = fs.lstatSync(filePath)
-    console.log("skipping: " + filePath)
+    const stats = fs.lstatSync(filePath)
+
+    console.log('skipping: ' + filePath)
     return callback()
-  } catch (error1) {
-    err = error1
-    console.log("writing: " + filePath)
-    file = fs.createWriteStream(filePath)
-    return https.get(videoUrl, function(resp) {
+  } catch (e) {
+
+    console.log('writing: ' + filePath)
+    const file = fs.createWriteStream(filePath)
+    return https.get(videoUrl, (resp) => {
       resp.pipe(file)
-      return file.on('finish', function() {
+      return file.on('finish', () => {
         file.close()
         return callback()
       })
@@ -104,4 +96,21 @@ const writeFile = (videoUrl, filePath, callback) => {
   }
 }
 
-module.exports = downloadSeries
+const downloadAllVideos = links => new Promise((resolve, reject) => {
+  const threadCount = os.cpus().length
+
+  async.eachLimit(links, threadCount, (link, next) => {
+    getVideoInfo(link)
+      .then(video => {
+        writeFile(video, next)
+      })
+  }, resolve)
+})
+
+module.exports = url => {
+  return fetchLinks(url)
+    .then(links => {
+      console.log(`Found ${links.length} videos`)
+      return downloadAllVideos(links)
+    })
+}

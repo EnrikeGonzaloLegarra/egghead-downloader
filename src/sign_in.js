@@ -1,31 +1,45 @@
 'use strict'
 
-const request = require('request')
+const request = require('request-promise-native')
 const cheerio = require('cheerio')
 
-const get = (callback) => {
-  return request("https://egghead.io/users/sign_in", function(error, response, html) {
-    var $, token
-    $ = cheerio.load(html)
-    token = $('input[name=authenticity_token]').val()
-    return callback(token)
+const getAuthToken = () => {
+  return request('https://egghead.io/users/sign_in', {
+    jar: true,
+    rejectUnauthorized: false,
+    followAllRedirects: true
   })
+    .then(html => {
+      const $ = cheerio.load(html)
+      const token = $('input[name=authenticity_token]').val()
+      return token
+    })
+    .catch(e =>{
+      console.error('Error getting auth token', e)
+      throw e
+    })
 }
 
-const post = (token, callback) => {
-  console.log("signing in as " + process.env.EMAIL)
-  return request.post("https://egghead.io/users/sign_in", {
+const doLogin = ({ email, password, token }) => {
+  console.log(`signing in as ${email}`)
+  return request.post('https://egghead.io/users/sign_in', {
+    jar: true,
+    rejectUnauthorized: false,
+    followAllRedirects: true,
     form: {
-      "utf8": "✓",
-      "authenticity_token": token,
-      "user[email]": process.env.EMAIL,
-      "user[password]": process.env.PASSWORD
+      'utf8': '✓',
+      'user[email]': email,
+      'user[password]': password,
+      'authenticity_token': token
     }
-  }, callback)
+  })
+  .catch(e => {
+    console.error('Error during signin', e)
+    throw e
+  })
 }
 
-module.exports = (callback) => {
-  return get((token) => {
-    return post(token, callback)
-  })
+module.exports = ({ email, password }) => {
+  return getAuthToken()
+    .then(token => doLogin({ email, password, token }))
 }

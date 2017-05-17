@@ -4,7 +4,7 @@ Forked to move it to JavaScript and because npm version also have removed origin
 
 If you have a pro account with egghead.io you can download a HD video series for later viewing.
 
-Update `.env` with your email and password and run the script with the url of a video series e.g.
+Copy `.env-example` to `.env` and update it with your email and password and run the script with the url of a video series e.g.
 
 ```bash
 npm install
