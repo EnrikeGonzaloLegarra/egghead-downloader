@@ -1,3 +1,5 @@
+Forked to move it to JavaScript and because npm version also have removed original code. 
+
 # Egghead.io video downloader
 
 If you have a pro account with egghead.io you can download a HD video series for later viewing.
