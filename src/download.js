@@ -1,65 +1,58 @@
-'use strict'
-
-const https = require('https')
-const fs = require('fs')
-const url = require('url')
-const path = require('path')
-const mkdirp = require('mkdirp')
-const async = require('async')
-const cheerio = require('cheerio')
-const os = require('os')
-const request = require('request-promise-native')
+import https from 'https'
+import cheerio from 'cheerio'
+import request from 'request-promise-native'
+import { cpus } from 'os'
+import { eachLimit } from 'async'
+import { basename } from 'path'
+import { parse as parseUrl } from 'url'
+import { sync as mkdirpSync } from 'mkdirp'
+import { lstatSync, createWriteStream, writeFileSync } from 'fs'
 
 const VIDEO_BASE_URL = 'https://embedwistia-a.akamaihd.net/deliveries/'
+const defaultRequestOptions = {
+  jar: true,
+  rejectUnauthorized: false,
+  followAllRedirects: true
+}
 
-const fetchLinks = url => {
+export const downloadSeries = async (url) => {
+  const linksInfo = await fetchLinks(url)
+  const metadata = await downloadAllVideos(linksInfo)
+  return saveMetadataInfo(metadata)
+}
+
+const fetchLinks = async (url) => {
   console.log(`Looking for links: ${url}`)
   const parts = url.split('/')
   const series = parts[parts.length - 1]
-  return request(url,{
-    jar: true,
-    rejectUnauthorized: false,
-    followAllRedirects: true
+
+  const html = await request(url, defaultRequestOptions)
+
+  const $ = cheerio.load(html)
+  const links = []
+  $('a.flex.bg-white').each(function (i, link) {
+    const index = `${(i+1)<10?'0':''}${i+1}`
+    const href =  $(this).attr('href')
+    links.push({ href, series, index })
   })
-  .then(html => {
-    const $ = cheerio.load(html)
-    const links = []
-    $('a.flex.bg-white').each(function (i, link) {
-      const index = `${(i+1)<10?'0':''}${i+1}`
-      const href =  $(this).attr('href')
-      links.push({ href, series, index })
-    })
-    return { url, series, links }
-  })
-  .catch(e => {
-    console.error('Error during fetch', e)
-    throw e
-  })
+
+  return { url, series, links }
 }
 
-const getVideoInfo = ({ index, series, href }) => {
+const getVideoInfo = async ({ index, series, href }) => {
   console.log(`Opening page: ${href}`)
-  return request(href, {
-    jar: true,
-    rejectUnauthorized: false,
-    followAllRedirects: true
-  })
-    .then(html => {
-      if (html.indexOf('This lesson is for PRO members.') > -1) {
-        throw Error('This lesson is for PRO members.')
-      }
-      const id = getVideoID(html)
-      const videoUrl = `${VIDEO_BASE_URL}${id}/file.mp4`
-      const fileName = `${path.basename(url.parse(href).pathname)}.mp4`
-      const filePath = `videos/${series}/${index}-${fileName}`
+  const html = await request(href, defaultRequestOptions)
 
-      mkdirp.sync(`videos/${series}`)
-      return { index, fileName, href, series, videoUrl, filePath }
-    })
-    .catch(e => {
-      console.error('Error during getVidePath', e)
-      throw e
-    })
+  if (html.indexOf('This lesson is for PRO members.') > -1) {
+    throw Error('This lesson is for PRO members.')
+  }
+  const id = getVideoID(html)
+  const videoUrl = `${VIDEO_BASE_URL}${id}/file.mp4`
+  const fileName = `${basename(parseUrl(href).pathname)}.mp4`
+  const filePath = `videos/${series}/${index}-${fileName}`
+
+  mkdirpSync(`videos/${series}`)
+  return { index, fileName, href, series, videoUrl, filePath }
 }
 
 const getVideoID = (html) => {
@@ -78,14 +71,14 @@ const getVideoID = (html) => {
 
 const writeFile = ({ videoUrl, filePath }, callback) => {
   try {
-    const stats = fs.lstatSync(filePath)
+    const stats = lstatSync(filePath)
 
     console.log('\tSkipping: ' + filePath)
     return callback()
   } catch (e) {
 
     console.log('\tWriting: ' + filePath)
-    const file = fs.createWriteStream(filePath)
+    const file = createWriteStream(filePath)
     return https.get(videoUrl, (resp) => {
       resp.pipe(file)
       return file.on('finish', () => {
@@ -97,7 +90,7 @@ const writeFile = ({ videoUrl, filePath }, callback) => {
 }
 
 const downloadAllVideos = ({ url, series, links }) => new Promise((resolve, reject) => {
-  const threadCount = os.cpus().length
+  const threadCount = cpus().length
   const info = {
     url,
     series,
@@ -105,7 +98,7 @@ const downloadAllVideos = ({ url, series, links }) => new Promise((resolve, reje
   }
   console.log(`Found ${links.length} videos. Downloading with ${threadCount} threads`)
 
-  async.eachLimit(links, threadCount, (link, next) => {
+  eachLimit(links, threadCount, (link, next) => {
     getVideoInfo(link)
       .then(video => {
         info.videos.push(video)
@@ -118,14 +111,9 @@ const downloadAllVideos = ({ url, series, links }) => new Promise((resolve, reje
   })
 })
 
-const saveInfo = info => {
+const saveMetadataInfo = info => {
   const metaFile = `videos/${info.series}.json`
   const content = JSON.stringify(info, null, 2)
   console.log(`Saving metadata file: ${metaFile}`)
-  fs.writeFileSync(metaFile, content)
+  writeFileSync(metaFile, content)
 }
-
-module.exports = url => fetchLinks(url)
-  .then(downloadAllVideos)
-  .then(saveInfo)
-

@@ -1,27 +1,30 @@
-'use strict'
+import request from 'request-promise-native'
+import cheerio from 'cheerio'
 
-const request = require('request-promise-native')
-const cheerio = require('cheerio')
+export const signIn = async (credentials) => {
+  try {
+  const token = await getAuthToken()
+  return doLogin(credentials, token)
+  } catch(e) {
+    console.error('Error during signIn')
+    console.error(e)
+    throw e
+  }
+}
 
-const getAuthToken = () => {
-  return request('https://egghead.io/users/sign_in', {
+const getAuthToken = async () => {
+  const html = await request('https://egghead.io/users/sign_in', {
     jar: true,
     rejectUnauthorized: false,
     followAllRedirects: true
   })
-    .then(html => {
-      const $ = cheerio.load(html)
-      const token = $('input[name=authenticity_token]').val()
-      return token
-    })
-    .catch(e =>{
-      console.error('Error getting auth token', e)
-      throw e
-    })
+  const $ = cheerio.load(html)
+  const token = $('input[name=authenticity_token]').val()
+  return token
 }
 
 const doLogin = ({ email, password }, token) => {
-  console.log(`signing in as ${email}`)
+  console.log(`Signing in as ${email}`)
   return request.post('https://egghead.io/users/sign_in', {
     jar: true,
     rejectUnauthorized: false,
@@ -33,11 +36,5 @@ const doLogin = ({ email, password }, token) => {
       'authenticity_token': token
     }
   })
-  .catch(e => {
-    console.error('Error during signin', e)
-    throw e
-  })
 }
 
-module.exports = credentials => getAuthToken()
-  .then(token => doLogin(credentials, token))
