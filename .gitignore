@@ -1,2 +1,4 @@
 videos
 tmp
+.env
+node_modules

@@ -3,19 +3,17 @@
   "version": "1.0.0",
   "description": "",
   "main": "index.js",
-  "scripts": {},
+  "scripts": {
+    "download": "node src/program.js"
+  },
   "author": "",
   "license": "ISC",
-  "scripts": {
-    "download": "coffee src/program.coffee"
-  },
   "dependencies": {
-    "async": "^1.5.2",
-    "cheerio": "^0.20.0",
-    "coffee-script": "^1.10.0",
-    "commander": "^2.9.0",
-    "dotenv": "^2.0.0",
-    "mkdirp": "^0.5.1",
-    "request": "^2.69.0"
+    "async": "2.4.0",
+    "cheerio": "0.22.0",
+    "commander": "2.9.0",
+    "dotenv": "4.0.0",
+    "mkdirp": "0.5.1",
+    "request": "2.81.0"
   }
 }
