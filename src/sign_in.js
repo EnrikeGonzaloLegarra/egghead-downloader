@@ -20,7 +20,7 @@ const getAuthToken = () => {
     })
 }
 
-const doLogin = ({ email, password, token }) => {
+const doLogin = ({ email, password }, token) => {
   console.log(`signing in as ${email}`)
   return request.post('https://egghead.io/users/sign_in', {
     jar: true,
@@ -39,7 +39,5 @@ const doLogin = ({ email, password, token }) => {
   })
 }
 
-module.exports = ({ email, password }) => {
-  return getAuthToken()
-    .then(token => doLogin({ email, password, token }))
-}
+module.exports = credentials => getAuthToken()
+  .then(token => doLogin(credentials, token))

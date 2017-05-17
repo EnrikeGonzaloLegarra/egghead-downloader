@@ -29,7 +29,7 @@ const fetchLinks = url => {
       const href =  $(this).attr('href')
       links.push({ href, series, index })
     })
-    return links
+    return { series, links }
   })
   .catch(e => {
     console.error('Error during fetch', e)
@@ -37,9 +37,9 @@ const fetchLinks = url => {
   })
 }
 
-const getVideoInfo = link => {
-  console.log('Opening page: ' + link.href)
-  return request(link.href, {
+const getVideoInfo = ({ index, series, href }) => {
+  console.log(`Opening page: ${href}`)
+  return request(href, {
     jar: true,
     rejectUnauthorized: false,
     followAllRedirects: true
@@ -50,11 +50,11 @@ const getVideoInfo = link => {
       }
       const id = getVideoID(html)
       const videoUrl = `${VIDEO_BASE_URL}${id}/file.mp4`
-      const fileName = path.basename(url.parse(link.href).pathname)
-      const filePath = `videos/${link.series}/${link.index}-${fileName}.mp4`
+      const fileName = `${path.basename(url.parse(href).pathname)}.mp4`
+      const filePath = `videos/${series}/${index}-${fileName}`
 
-      mkdirp.sync('videos/' + link.series)
-      return { videoUrl, filePath }
+      mkdirp.sync(`videos/${series}`)
+      return { index, fileName, href, series, videoUrl, filePath }
     })
     .catch(e => {
       console.error('Error during getVidePath', e)
@@ -80,11 +80,11 @@ const writeFile = ({ videoUrl, filePath }, callback) => {
   try {
     const stats = fs.lstatSync(filePath)
 
-    console.log('skipping: ' + filePath)
+    console.log('\tSkipping: ' + filePath)
     return callback()
   } catch (e) {
 
-    console.log('writing: ' + filePath)
+    console.log('\tWriting: ' + filePath)
     const file = fs.createWriteStream(filePath)
     return https.get(videoUrl, (resp) => {
       resp.pipe(file)
@@ -96,21 +96,35 @@ const writeFile = ({ videoUrl, filePath }, callback) => {
   }
 }
 
-const downloadAllVideos = links => new Promise((resolve, reject) => {
+const downloadAllVideos = ({ series, links }) => new Promise((resolve, reject) => {
   const threadCount = os.cpus().length
+  const info = {
+    series,
+    videos: []
+  }
+  console.log(`Found ${links.length} videos. Downloading with ${threadCount} threads`)
 
   async.eachLimit(links, threadCount, (link, next) => {
     getVideoInfo(link)
       .then(video => {
+        info.videos.push(video)
         writeFile(video, next)
       })
-  }, resolve)
+  }, (err) => {
+    if (err) return reject(err)
+
+    return resolve(info)
+  })
 })
 
-module.exports = url => {
-  return fetchLinks(url)
-    .then(links => {
-      console.log(`Found ${links.length} videos`)
-      return downloadAllVideos(links)
-    })
+const saveInfo = info => {
+  const metaFile = `videos/${info.series}.json`
+  const content = JSON.stringify(info, null, 2)
+  console.log(`Saving metadata file: ${metaFile}`)
+  fs.writeFileSync(metaFile, content)
 }
+
+module.exports = url => fetchLinks(url)
+  .then(downloadAllVideos)
+  .then(saveInfo)
+
