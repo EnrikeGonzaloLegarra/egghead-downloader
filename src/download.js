@@ -29,7 +29,7 @@ const fetchLinks = url => {
       const href =  $(this).attr('href')
       links.push({ href, series, index })
     })
-    return { series, links }
+    return { url, series, links }
   })
   .catch(e => {
     console.error('Error during fetch', e)
@@ -96,9 +96,10 @@ const writeFile = ({ videoUrl, filePath }, callback) => {
   }
 }
 
-const downloadAllVideos = ({ series, links }) => new Promise((resolve, reject) => {
+const downloadAllVideos = ({ url, series, links }) => new Promise((resolve, reject) => {
   const threadCount = os.cpus().length
   const info = {
+    url,
     series,
     videos: []
   }
